@@ -1,0 +1,100 @@
+# Sinatra for Google Analytics 4
+
+Template oficial do GTM para integrar seus eventos do GA4 com o [**Sinatra**](https://www.sinatra.pro/) — plataforma de data activation.
+
+![Sinatra for Google Analytics 4 — template no GTM](docs/template-preview.png)
+
+> Não é um webhook genérico. O endpoint é fixo (`integrations.sinatra.pro`) e os eventos chegam direto na sua workspace do Sinatra, autenticados pelo Account ID + Token gerados na plataforma.
+
+---
+
+## Como funciona
+
+`containerContexts: ["WEB"]` — roda em qualquer container web do GTM.
+
+A tag injeta um script externo (`sinatra.js`) no browser via `injectScript`. Esse script:
+
+1. Lê a configuração salva em `window.__sinatra`
+2. Faz monkey-patch em `window.fetch`, `navigator.sendBeacon` e `XMLHttpRequest`
+3. Intercepta requisições para `/g/collect` com `tid=G-*` (qualquer endpoint GA4: `google-analytics.com` ou sGTM custom)
+4. Mergeia URL params + body URL-encoded → params object
+5. Encaminha como **GET** para `integrations.sinatra.pro/analytics/events` com **todos os params do wire format intactos** + `account_id` e `token`
+
+Zero transformação. O backend recebe o mesmo conjunto de chaves que o GA4 enviaria (`v`, `tid`, `cid`, `en`, `sid`, `sct`, `seg`, `dl`, `dr`, `dt`, `ul`, `sr`, `ep.*`, `epn.*`, `pr1.*`, `uap`, `uapv`, `ur`, `gcd`, `npa`, `dma`, `ecid`, etc.).
+
+### Configuração
+
+| Campo | Obrigatório | Descrição |
+|---|---|---|
+| **Account ID** | Sim | Identificador da sua workspace no Sinatra (gerado em sinatra.pro) |
+| **Token** | Sim | Token de autenticação da workspace |
+| **GA4 Measurement ID** | Não | Fallback caso o hit não contenha `tid` |
+| **Habilitar logs no console** | Não | Liga logs `[Sinatra]` detalhados (use só em debug; ver "Segurança") |
+| **Respeitar Google Consent Mode** | Não (default: **ligado**) | Descarta hits com `analytics_storage=denied` antes de enviar. Vem marcado por padrão; só desmarque se o consentimento é tratado em outra camada |
+| **Campos a excluir** | Não | Lista de campos a remover do wire format antes de enviar (data minimization). Aceita wildcard `*` no final |
+
+### Trigger recomendado
+
+**Initialization - All Pages.** O monkey-patch precisa estar ativo antes de qualquer hit do GA4 ser disparado.
+
+> Configure em **Initialization**, não em All Pages — o script tem que estar carregado antes do primeiro hit.
+
+### Como o script é carregado
+
+O `sinatra.js` é injetado uma única vez por página via `injectScript` (GTM faz cache por URL). A partir daí, qualquer hit do GA4 naquela página é automaticamente replicado — sem precisar vincular o Sinatra aos mesmos triggers do GA4.
+
+### Limitações
+
+**Setups com `server_container_url` configurado (sGTM em first-party):** o Google injeta um `sw_iframe.html` cross-origin que envia os hits subsequentes a partir do origin do sGTM (`*.run.app` ou domínio customizado). Como o iframe roda numa origin diferente da página, nosso patch em `window.fetch` não alcança esses requests. Resultado: capturamos o primeiro `page_view` mas perdemos os hits de engajamento e ecommerce subsequentes.
+
+**Solução:** para cobertura total quando o cliente tem sGTM, use a integração server-side do Sinatra (distribuída separadamente, fora deste template do Gallery).
+
+---
+
+## LGPD e privacidade
+
+Os mesmos dados que o GA4 coleta são também encaminhados pra sua workspace no Sinatra. Como controlador, você precisa:
+
+1. Listar o Sinatra (`integrations.sinatra.pro`) como operador na sua política de privacidade
+2. Ter contrato de tratamento de dados (DPA) com o Sinatra
+3. Configurar consent + data minimization conforme finalidade
+
+### Configurações de compliance disponíveis no template
+
+**Respeitar Google Consent Mode** — **ligado por padrão**. Hits com `gcs` indicando `analytics_storage=denied` são descartados antes de chegar ao Sinatra. Só desmarque se o consentimento é tratado em outra camada legal.
+
+**Campos a excluir (data minimization)** — lista separada por vírgula, aceita wildcard `*` no final. Presets úteis:
+
+| Cenário | Lista sugerida |
+|---|---|
+| Reduzir fingerprinting | `uafvl, uaa, uab, uam, uamb, uap, uapv, uaw, sr` |
+| Tirar metadata do sGTM | `sst.*` |
+| Tirar enhanced conversions | `ecid` |
+| Anonimização agressiva | `uafvl, uaa, uab, uam, uamb, uap, uapv, uaw, sr, sst.*, ecid, _p, _s` |
+
+📄 **Documentação completa de privacidade:** [`docs/PRIVACY.md`](docs/PRIVACY.md) — catalogação de cada campo, bases legais, fluxo de direitos do titular e trecho pronto pra colar em política de privacidade.
+
+---
+
+## Instalação
+
+1. No GTM, vá em **Templates > Novo**
+2. Clique em **importar** e selecione `template.tpl`
+3. Salve o template
+4. Crie uma nova **Tag** usando o template
+5. Configure os campos obrigatórios (Account ID e Token)
+6. Configure o trigger: **Initialization - All Pages**
+7. Em produção, **mantenha "Habilitar logs no console" desmarcado**
+8. Teste em **Preview Mode** (pode ligar o debug temporariamente)
+9. Publique
+
+---
+
+## Segurança
+
+- O `token` é transmitido como query param na requisição GET. Use HTTPS sempre, prefira tokens rotacionáveis curtos, e considere rate limit + IP allowlist no backend.
+- Em produção, deixe a opção "Habilitar logs no console" **desmarcada**. Quando marcada, URLs interceptadas do GA4 aparecem no DevTools — incluindo PII que esteja em `ep.*`.
+
+---
+
+**Desenvolvido por [Sinatra](https://www.sinatra.pro/)**

@@ -1,0 +1,5 @@
+homepage: "https://www.sinatra.pro/"
+documentation: "https://github.com/sinatrapro/sinatra-for-ga"
+versions:
+  - sha: da72477cf5745fa832467b0d3eb7e47fe951831a
+    changeNotes: Initial release.
